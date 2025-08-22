@@ -3,3 +3,1140 @@ matplotlib
 numpy
 mediapipe
 jupyter
+
+
+
+
+
+
+
+
+import csv
+from fastavro import reader
+from google.cloud import storage
+import tempfile
+import os
+ 
+def download_from_gcs(bucket_name, source_blob_name, destination_file_name):
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(source_blob_name)
+    blob.download_to_filename(destination_file_name)
+    print(f"Downloaded {source_blob_name} to {destination_file_name}")
+ 
+def upload_to_gcs(bucket_name, destination_blob_name, source_file_name):
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(destination_blob_name)
+    blob.upload_from_filename(source_file_name)
+    print(f"Uploaded {source_file_name} to {destination_blob_name}")
+ 
+def avro_to_csv_gcs(bucket_name, avro_blob_path, csv_blob_path):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        local_avro = os.path.join(temp_dir, "temp.avro")
+        local_csv = os.path.join(temp_dir, "temp.csv")
+ 
+        # Download Avro file from GCS
+        download_from_gcs(bucket_name, avro_blob_path, local_avro)
+ 
+        # Convert to CSV
+        with open(local_avro, 'rb') as avro_file:
+            avro_reader = reader(avro_file)
+            records = list(avro_reader)
+ 
+            if not records:
+                print("No records in Avro file.")
+                return
+ 
+            fieldnames = list(records[0].keys())
+ 
+            with open(local_csv, 'w', newline='') as csv_file:
+                csv_writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+                csv_writer.writeheader()
+                csv_writer.writerows(records)
+ 
+        # Upload CSV to GCS
+        upload_to_gcs(bucket_name, csv_blob_path, local_csv)
+ 
+# Example usage
+avro_to_csv_gcs(
+    bucket_name='your-gcs-bucket-name',
+    avro_blob_path='path/in/bucket/input.avro',
+    csv_blob_path='path/in/bucket/output.csv'
+)
+ 
+from google.cloud import storage
+from fastavro import reader
+import pandas as pd
+import tempfile
+import os
+ 
+def read_avro_from_gcs(bucket_name, avro_blob_path):
+    # Create a temporary file to store the Avro data
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".avro") as temp_file:
+        temp_path = temp_file.name
+ 
+    # Download the Avro file from GCS
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(avro_blob_path)
+    blob.download_to_filename(temp_path)
+    print(f"Downloaded {avro_blob_path} to {temp_path}")
+ 
+    # Read Avro into DataFrame
+    with open(temp_path, 'rb') as avro_file:
+        avro_reader = reader(avro_file)
+        records = list(avro_reader)
+ 
+    os.remove(temp_path)  # Clean up
+ 
+    if not records:
+        print("No records found.")
+        return pd.DataFrame()
+ 
+    return pd.DataFrame(records)
+ 
+# Example usage
+df = read_avro_from_gcs('your-bucket-name', 'folder/your_file.avro')
+df.head()
+ 
+create or replace table vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.month_voice_traffic_test_apr10 as (
+  select distinct
+  td.opco,
+ td.month,
+  "In" as direction,
+  td.destination as carrier_destination,
+   coalesce(vcdm.vcs_desc,td.destination) as vcs_destination,
+if
+  (settlement_origin_in="***",null,settlement_origin_in) as obr,
+  td.account_in as carrier_account,
+  coalesce(voice_carrier_name_mapping.vcs_carrier_name,td.account_in) as vcs_account,
+  td.minutes_in as minutes,
+  round((revenue_gbp*forex.vcs_pound_rate),6) as amount_eur,
+  round((revenue_gbp*forex_1.vcs_pound_rate),6) as amount_usd,
+  round((rpm_gbp*forex.vcs_pound_rate),6) as rate_eur,
+  round((rpm_gbp*forex_1.vcs_pound_rate),6) as rate_usd,
+  "EUR" as opco_currency,
+if
+  (vcs_destination like "%Mobile%","Mobile","Fixed") as fixed_mobile,
+  td.route_class,
+  vdm.country as country,
+  vcrm.region,
+  td.seized,
+  td.answered,
+  td.asr,
+  td.aloc,
+  voice_carrier_name_mapping.vcs_carrier_name as customer,
+  voice_carrier_name_mapping_1.vcs_carrier_name as supplier,
+  td.trunk_in as customer_trunk,
+  td.trunk_out as supplier_trunk,
+if
+  (contract_in="***",null,contract_in) as customer_contract,
+if
+  (contract_out="***",null,contract_out) as supplier_contract,
+  td.routing_service,
+  td.minutes_in as revenue_minutes,
+  td.minutes_out as cost_minutes,
+  --null as cost_minutes,
+  round((revenue_gbp*forex.vcs_pound_rate),6) as revenue_eur,
+  round((cost_gbp*forex.vcs_pound_rate),6) as cost_eur,
+  --null as cost_eur,
+  round((margin_gbp*forex.vcs_pound_rate),6) as margin_eur,
+  round((rpm_gbp* forex.vcs_pound_rate),6) as rpm_eur,
+  round((cpm_gbp*forex.vcs_pound_rate),6) as cpm_eur,
+  --null as cpm_eur,
+  round((revenue_gbp*forex_1.vcs_pound_rate),6) as revenue_usd,
+  round((cost_gbp* forex_1.vcs_pound_rate),6) as cost_usd,
+  --null as cost_usd,
+  round((margin_gbp*forex_1.vcs_pound_rate),6) as margin_usd,
+  round((rpm_gbp*forex_1.vcs_pound_rate),6) as rpm_usd,
+  round((cpm_gbp* forex_1.vcs_pound_rate),6) as cpm_usd
+--  null as cpm_usd
+,
+  am.account_manager,
+vam.manager,
+  voice_carrier_name_mapping_1.vcs_account_id as account_id,
+if
+  (vbm.bearcap is null,"IPX",vbm.bearcap) as bearcap,
+  td.doc, service_processed_at,partition_year_month_day
+from vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.gcp_td_temp_test as td
+                left join
+                  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_forex_rate as forex
+                on
+                  td.month  = parse_date('%d-%b-%y', forex.vcs_month) and forex.vcs_currency_id="EUR"
+              left join
+                vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_forex_rate as forex_1
+              on
+                td.month  = parse_date('%d-%b-%y', forex_1.vcs_month) and forex_1.vcs_currency_id="USD"
+            left join
+              vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.voice_customer_destination_map as vcdm
+            on
+              (td.destination = vcdm.dest_desc)
+              and (td.opco = vcdm.opco_id)
+          left join
+            vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_destination_map as vdm
+          on
+            vcdm.vcs_desc = vdm.vcs_destination
+        left join
+          vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_country_region_map as vcrm
+        on
+          vdm.country = vcrm.country
+      left join
+         vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_carrier_name_mapping as voice_carrier_name_mapping
+      on
+        td.account_in = voice_carrier_name_mapping.carrier_carrier_name
+    left join
+      vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_bearcap_mapping as vbm
+  on
+    voice_carrier_name_mapping.vcs_carrier_name = vbm.carrier
+  left join
+    vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_carrier_name_mapping as voice_carrier_name_mapping_1
+    on
+      td.account_out = voice_carrier_name_mapping_1.carrier_carrier_name
+left join
+  (select distinct vcs_account_id, account_manager, manager
+from
+  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_accounts_managers_targets
+where vcs_product_channel in ("Voice" , "Cloud")) as vam on
+  voice_carrier_name_mapping.vcs_account_id = vam.vcs_account_id
+left join vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.account_managers as am on am.account = td.account_in
+ 
+union all
+ 
+select distinct
+  td.opco,
+  td.month,
+  "Out" as direction,
+  td.destination as carrier_destination,
+   coalesce(vcdm.vcs_desc,td.destination) as vcs_destination,
+if
+  (td.settlement_origin_out="***",null,td.settlement_origin_out) as obr,
+  td.account_out as carrier_account,
+  coalesce(voice_carrier_name_mapping_1.vcs_carrier_name,td.account_out) as vcs_account,
+  td.minutes_out as minutes,
+  round(((td.cost_gbp)*(forex.vcs_pound_rate)),6) as amount_eur,
+  round((td.cost_gbp*forex_1.vcs_pound_rate),6) as amount_usd,
+  round((td.cpm_gbp*forex.vcs_pound_rate),6) as rate_eur,
+  round((td.cpm_gbp*forex_1.vcs_pound_rate),6) as rate_usd,
+  "EUR" as opco_currency,
+if
+  (vcs_destination like "%Mobile%","Mobile","Fixed") as fixed_mobile,
+  td.route_class,
+  vdm.country as country,
+  vcrm.region,
+  td.seized,
+  td.answered,
+  td.asr,
+  td.aloc,
+  voice_carrier_name_mapping.vcs_carrier_name as customer,
+  voice_carrier_name_mapping_1.vcs_carrier_name as supplier,
+  td.trunk_in as customer_trunk,
+  td.trunk_out as supplier_trunk,
+if
+  (contract_in="***",null,contract_in) as customer_contract,
+if
+  (contract_out="***",null,contract_out) as supplier_contract,
+  td.routing_service,
+  td.minutes_in as revenue_minutes,
+--  null as revenue_minutes,
+  td.minutes_out as cost_minutes,
+  round((td.revenue_gbp*forex.vcs_pound_rate),6) as revenue_eur,
+  --null as revenue_eur,
+  round((td.cost_gbp*forex.vcs_pound_rate),6) as cost_eur,
+  round((td.margin_gbp*forex.vcs_pound_rate),6) as margin_eur,
+  round((td.rpm_gbp*forex.vcs_pound_rate),6) as rpm_eur,
+  --null as rpm_eur,
+  round((td.cpm_gbp*forex.vcs_pound_rate),6) as cpm_eur,
+  round((td.revenue_gbp*forex_1.vcs_pound_rate),6) as revenue_usd,
+  --null as revenue_usd,
+  round((td.cost_gbp* forex_1.vcs_pound_rate),6) as cost_usd,
+  round((td.margin_gbp*forex_1.vcs_pound_rate),6) as margin_usd,
+  round((td.rpm_gbp*forex_1.vcs_pound_rate),6) as rpm_usd,
+  --null as rpm_usd,
+  round((td.cpm_gbp* forex_1.vcs_pound_rate),6) as cpm_usd
+,
+  am.account_manager,
+vam.manager,
+  voice_carrier_name_mapping_1.vcs_account_id as account_id,
+if
+  (vbm.bearcap is null,"IPX",vbm.bearcap) as bearcap,
+  td.doc, service_processed_at,partition_year_month_day
+ 
+from vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.gcp_td_temp_test as td
+                left join
+                  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_forex_rate as forex
+                on
+                  td.month  = parse_date('%d-%b-%y', forex.vcs_month) and forex.vcs_currency_id="EUR"
+              left join
+                vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_forex_rate as forex_1
+              on
+                td.month  = parse_date('%d-%b-%y', forex_1.vcs_month) and forex_1.vcs_currency_id="USD"
+            left join
+              vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.voice_customer_destination_map as vcdm
+            on
+              (td.destination = vcdm.dest_desc)
+              and (td.opco = vcdm.opco_id)
+          left join
+            vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_destination_map as vdm
+          on
+            vcdm.vcs_desc = vdm.vcs_destination
+        left join
+          vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_country_region_map as vcrm
+        on
+          vdm.country = vcrm.country
+      left join
+        vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_carrier_name_mapping as voice_carrier_name_mapping
+      on
+        td.account_in = voice_carrier_name_mapping.carrier_carrier_name
+    left join
+      vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_carrier_name_mapping as voice_carrier_name_mapping_1
+    on
+      td.account_out = voice_carrier_name_mapping_1.carrier_carrier_name
+  left join
+    vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_bearcap_mapping as vbm
+  on
+    voice_carrier_name_mapping_1.vcs_carrier_name = vbm.carrier
+left join (select distinct vcs_account_id, manager
+from
+  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_accounts_managers_targets
+where vcs_product_channel in ("Voice" , "Cloud")) as vam on
+  voice_carrier_name_mapping_1.vcs_account_id = vam.vcs_account_id
+left join vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.account_managers as am on am.account = td.account_out);
+ 
+int_columns = [1, 2]  # For example, columns age and salary
+dtype_map = {cols[i]: "Int64" for i in int_columns}
+df = pd.read_csv("data.csv", dtype=dtype_map)
+ 
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timedelta
+from google.cloud import storage
+import fnmatch
+import logging
+ 
+# Define default arguments for the DAG
+default_args = {
+    'owner': 'airflow',
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+}
+ 
+# Define the DAG
+with DAG(
+    dag_id='gcs_find_oldest_newest_file',
+    default_args=default_args,
+    start_date=datetime(2025, 7, 1),
+    schedule_interval=None,  # Set to your need
+    catchup=False,
+    tags=['gcs', 'data-engineering'],
+) as dag:
+ 
+    def get_oldest_newest_from_gcs(bucket_name: str, wildcard_prefix: str, **kwargs):
+        client = storage.Client()
+        bucket = client.bucket(bucket_name)
+ 
+        # Extract base prefix (before wildcard) to limit GCS listing scope
+        base_prefix = wildcard_prefix.split('*')[0]
+ 
+        # List all blobs under base_prefix
+        all_blobs = list(client.list_blobs(bucket, prefix=base_prefix))
+        if not all_blobs:
+            logging.info("No files found under base prefix.")
+            return
+ 
+        # Filter blobs using fnmatch wildcard
+        matched_blobs = [blob for blob in all_blobs if fnmatch.fnmatch(blob.name, wildcard_prefix)]
+        if not matched_blobs:
+            logging.info("No blobs matched the wildcard pattern.")
+            return
+ 
+        # Sort by updated timestamp
+        matched_blobs.sort(key=lambda b: b.updated)
+ 
+        oldest_file = matched_blobs[0].name
+        newest_file = matched_blobs[-1].name
+ 
+        logging.info(f"Oldest file: {oldest_file}")
+        logging.info(f"Newest file: {newest_file}")
+ 
+        # Optionally, push to XComs
+        kwargs['ti'].xcom_push(key='oldest_file', value=oldest_file)
+        kwargs['ti'].xcom_push(key='newest_file', value=newest_file)
+ 
+    get_files_task = PythonOperator(
+        task_id='get_oldest_and_newest_files',
+        python_callable=get_oldest_newest_from_gcs,
+        op_kwargs={
+            'bucket_name': 'your-bucket-name',
+            'wildcard_prefix': 'your/path/2025*/files/*.parquet'
+        },
+        provide_context=True,
+    )
+ 
+    get_files_task
+ 
+from airflow import DAG
+from airflow.operators.bash import BashOperator
+from datetime import datetime
+ 
+default_args = {
+    'owner': 'airflow',
+    'start_date': datetime(2025, 7, 1),
+    'retries': 1
+}
+ 
+with DAG(
+    dag_id='example_bash_command',
+    default_args=default_args,
+    schedule_interval=None,
+    catchup=False,
+    tags=['example'],
+) as dag:
+ 
+    run_bash_command = BashOperator(
+        task_id='print_hello',
+        bash_command='echo "Hello from Airflow!"'
+    )
+ 
+    # Add more tasks if needed
+    run_bash_command
+ 
+ 
+ 
+ 
+ 
+ 
+BEGIN
+ 
+DECLARE i,j int64 DEFAULT 0;
+ 
+DECLARE cnt,file_count int64;
+Declare start_dt,end_dt,mth_dt date;
+ 
+ 
+declare list array<string>;
+ 
+DECLARE
+ 
+  col ARRAY<STRUCT<table_name string,column_name string>>;
+ 
+set start_dt=current_date()-45; set end_dt=current_date()-1; set mth_dt=current_date()-1;
+ 
+set list = ['vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s','vf-vrs-datahub.vfvrs_dh_lake_bi_vee_rawprepared_s','vf-vrs-datahub.vfvrs_dh_lake_bi_salesforce_rawprepared_s'];
+ 
+SET cnt=3;  
+ 
+WHILE i<cnt
+ 
+DO
+ 
+EXECUTE IMMEDIATE FORMAT("""  WITH cte AS ( Select distinct table_name , column_name from `%s.INFORMATION_SCHEMA.COLUMNS`  where is_partitioning_column = 'YES' and table_name not in ('syn_project1_inbounduniqueroamers_daily_servingcountrycalltypeapntac','syn_project1_inbounduniqueroamers_monthly_servingcountrycalltypeapntac','syn_project1_outbounduniqueroamers_daily_calltypeapntac','syn_project1_outbounduniqueroamers_monthly_calltypeapntac','abs_deal_calc_raw_data','abs_actual_traffic_data','abs_forecast_traffic','wft_email_templates','wft_error_log','wft_footprint_rows_view','wft_forecast_daily_traffic','wft_gg_rows_view','wft_gt_rows_view','wft_import_business_setting_rows','wft_import_cos_traffic','wft_import_daily_traffic','wft_import_files_types','wft_import_performance_moc_rows','wft_import_performance_top40_rows','wft_import_performance_total_rows','wft_import_sfdc_footprint_rows','wft_import_st_guidance_master_rows','wft_import_st_performance','wft_import_st_performance_raw','wft_import_test_results','wft_import_traffic_st_guide_rows','wft_incident_status','wft_input_cos_traffic','wft_input_daily_traffic','wft_input_footprint','wft_input_performance_moc_rows','wft_input_performance_top40_rows','wft_input_performance_total_rows','wft_input_st_guidance_general','wft_input_st_guidance_targets','wft_input_st_performance','wft_input_st_performance_raw','wft_input_test_results','wft_input_traffic_st_guide_rows','wft_input_types','wft_network_ids','wft_operators_inbound','wft_output_daily_comment','wft_output_emails','wft_output_inc_emails','wft_output_lm_feedback','wft_output_steering_manual_import','wft_output_svc_incidents','wft_perf_moc_rows_view','wft_perf_top40_rows_view','wft_perf_total_rows_view','wft_permissions','wft_roles','wft_sa_operator_data','wft_steering_group','wft_steering_group_per_tadig','wft_steering_request','wft_tadig_to_cos_mapping','wft_users','wft_valid_for_date_shift','wft_validation_msgs','wft_vf_filter_cos','wft_workorder','vee_nlvrs','vee_nlvrsts','vee_nl201071','vee_201097') and Not ENDS_WITH(table_name,'20221116') and Not ENDS_WITH(table_name,'historical') order by 1) SELECT ARRAY_AGG(STRUCT(table_name,column_name)) AS col FROM cte""",list[i]) into col;
+ 
+EXECUTE IMMEDIATE FORMAT("""select count(distinct table_name) from %s.INFORMATION_SCHEMA.COLUMNS  where is_partitioning_column = 'YES' and table_name not in ('syn_project1_inbounduniqueroamers_daily_servingcountrycalltypeapntac','syn_project1_inbounduniqueroamers_monthly_servingcountrycalltypeapntac','syn_project1_outbounduniqueroamers_daily_calltypeapntac','syn_project1_outbounduniqueroamers_monthly_calltypeapntac','abs_deal_calc_raw_data','abs_actual_traffic_data','abs_forecast_traffic','wft_email_templates','wft_error_log','wft_footprint_rows_view','wft_forecast_daily_traffic','wft_gg_rows_view','wft_gt_rows_view','wft_import_business_setting_rows','wft_import_cos_traffic','wft_import_daily_traffic','wft_import_files_types','wft_import_performance_moc_rows','wft_import_performance_top40_rows','wft_import_performance_total_rows','wft_import_sfdc_footprint_rows','wft_import_st_guidance_master_rows','wft_import_st_performance','wft_import_st_performance_raw','wft_import_test_results','wft_import_traffic_st_guide_rows','wft_incident_status','wft_input_cos_traffic','wft_input_daily_traffic','wft_input_footprint','wft_input_performance_moc_rows','wft_input_performance_top40_rows','wft_input_performance_total_rows','wft_input_st_guidance_general','wft_input_st_guidance_targets','wft_input_st_performance','wft_input_st_performance_raw','wft_input_test_results','wft_input_traffic_st_guide_rows','wft_input_types','wft_network_ids','wft_operators_inbound','wft_output_daily_comment','wft_output_emails','wft_output_inc_emails','wft_output_lm_feedback','wft_output_steering_manual_import','wft_output_svc_incidents','wft_perf_moc_rows_view','wft_perf_top40_rows_view','wft_perf_total_rows_view','wft_permissions','wft_roles','wft_sa_operator_data','wft_steering_group','wft_steering_group_per_tadig','wft_steering_request','wft_tadig_to_cos_mapping','wft_users','wft_valid_for_date_shift','wft_validation_msgs','wft_vf_filter_cos','wft_workorder','vee_nlvrs','vee_nlvrsts','vee_nl201071','vee_201097') and Not ENDS_WITH(table_name,'20221116') and Not ENDS_WITH(table_name,'historical')""",list[i]) into file_count;
+ 
+WHILE j<file_count
+ 
+DO
+ 
+EXECUTE IMMEDIATE FORMAT("""create or replace table vf-grp-vrs-dev-poc.test_dq_poc.dq_syniverse_missing_partitions_45day as (SELECT distinct '%s.%s' as table_id,cast(missing_date as STRING) as missing_date,'missing' as flag,current_timestamp() as ingested_time from unnest(generate_date_array('%t','%t',INTERVAL 1 day)) as missing_date where missing_date not in (Select distinct cast(partition_year_month_day as date) FROM %s.%s where partition_year_month_day between '%t' and '%t') group by table_id,missing_date,ingested_time)""",list[i],col[SAFE_OFFSET(j)].table_name,start_dt,mth_dt,list[i],col[SAFE_OFFSET(j)].table_name,start_dt,mth_dt);
+ 
+ 
+EXECUTE IMMEDIATE FORMAT(""" Merge vf-grp-vrs-dev-poc.test_dq_poc.dq_syniverse_missing_partitions_7day as d7 using vf-grp-vrs-dev-poc.test_dq_poc.dq_syniverse_missing_partitions_45day as md on trim(md.table_id)=trim(d7.table_id) and cast(md.missing_date as date)=cast(trim(d7.missing_date) as date) when matched then update set d7.ingested_time=md.ingested_time when not matched then insert (table_id,missing_date,flag,ingested_time) values(md.table_id,md.missing_date,md.flag,md.ingested_time)""");
+ 
+EXECUTE IMMEDIATE FORMAT("""update vf-grp-vrs-dev-poc.test_dq_poc.dq_syniverse_missing_partitions_7day set flag = 'loaded' , ingested_time=current_timestamp() where flag='missing' and concat(table_id,trim(missing_date)) not in (select concat(table_id,missing_date) from (select table_id,trim(missing_date) as missing_date,flag,ingested_time from vf-grp-vrs-dev-poc.test_dq_poc.dq_syniverse_missing_partitions_45day where cast(ingested_time as date) = current_date()))""");
+ 
+ 
+ 
+ 
+SET j=j+1;
+ 
+END WHILE;
+ 
+SET i=i+1;
+ 
+END WHILE;
+ 
+END
+ 
+--O004 Termination and O005 Append Termination
+CREATE  OR REPLACE TABLE
+  vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.vft_temp_test AS (
+  SELECT
+    'TURKEY' AS OpCo,
+    cast(partition_year_month_day as date) AS Month,
+    'In' AS Direction,
+    Partner AS Account,
+    Destination,
+    SUM(Sum_Duration) AS Minutes,
+    SUM(ROUND((Rate*Sum_Duration),2)) AS Amount,
+    Rate,
+    Partner_Currency AS Currency,service_processed_at,partition_year_month_day
+  FROM
+    vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vft_termination_file
+  WHERE
+    --Partner <>'VGEL'
+    --AND
+     Destination IS NOT NULL
+  GROUP BY
+    OpCo,
+    Month,
+    Partner,
+    Destination,
+    Rate,
+    Partner_Currency,service_processed_at,partition_year_month_day)
+;
+--O006 Wholesale In Query and O007 Wholesale In
+INSERT INTO
+  vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.vft_temp_test
+SELECT
+  'TURKEY' AS OpCo,
+  cast(partition_year_month_day as date) AS Month,
+  'In' AS Direction,
+  IFNULL(Incoming_Carrier, 'Unallocated') AS Account,
+  IFNULL(Supplier_Destination,'Unallocated') AS Destination,
+  SUM(Minutes) AS Minutes,
+  SUM(ROUND(Minutes*In_Rate,2)) AS Amount,
+  In_Rate AS Rate,
+  In_Currency AS Currency,service_processed_at,partition_year_month_day
+FROM
+  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vft_transit_file
+WHERE
+  Incoming_Carrier NOT LIKE 'VodafoneNet%'
+  AND Incoming_Carrier NOT IN ('Vodafone_Int',
+    'Vodafone_Video',
+    'VGEL')
+GROUP BY
+  Supplier_Destination,
+  Incoming_Carrier,
+  In_Rate,
+  In_Currency,service_processed_at,partition_year_month_day
+;
+--O008 Retail Out Qry and O009 Retail Out
+INSERT INTO
+  vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.vft_temp_test
+SELECT
+  'TURKEY' AS OpCo,
+  cast(partition_year_month_day as date) AS Month,
+  'Out' AS Direction,
+  IFNULL(Outgoing_Carrier, 'Unallocated') AS Account,
+  IFNULL(Offered_Destination, 'Unallocated') AS Destination,
+  SUM(Minutes) AS Minutes,
+  SUM(ROUND((Minutes*Out_Rate),2)) AS Amount,
+  Out_Rate AS Rate,
+  Out_Currency AS Currency,service_processed_at,partition_year_month_day
+FROM
+  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vft_transit_file
+WHERE
+  --Outgoing_Carrier <>'VGEL'
+  --AND
+  (Incoming_Carrier LIKE 'VodafoneNet%'
+    OR Incoming_Carrier IN ('Vodafone_Int',
+      'Vodafone_Video'))
+GROUP BY
+  Outgoing_Carrier,
+  Offered_Destination,
+  Out_Rate,
+  Out_Currency,service_processed_at,partition_year_month_day
+;
+--O010 Wholesale Out Qry and O011 Wholesale Out
+INSERT INTO
+  vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.vft_temp_test
+SELECT
+  'TURKEY' AS OpCo,
+  cast(partition_year_month_day as date) AS Month,
+  'Out' AS Direction,
+  IFNULL(Outgoing_Carrier, 'Unallocated') AS Account,
+  IFNULL(Supplier_Destination, 'Unallocated') AS Destination,
+  SUM(Minutes) AS Minutes,
+  SUM(ROUND((Minutes*Out_Rate),2)) AS Amount,
+  Out_Rate AS Rate,
+  Out_Currency AS Currency,service_processed_at,partition_year_month_day
+FROM
+  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vft_transit_file
+WHERE
+  --Outgoing_Carrier <>'VGEL'
+  --AND
+  Supplier_Destination IS NOT NULL
+  AND (Incoming_Carrier NOT LIKE 'VodafoneNet%'
+    AND Incoming_Carrier NOT IN ('Vodafone_Int',
+      'Vodafone_Video'))
+GROUP BY
+  Outgoing_Carrier,
+  Supplier_Destination,
+  Out_Rate,
+  Out_Currency,service_processed_at,partition_year_month_day;
+ 
+--O012 Delete IntraCo Duplicates
+DELETE
+FROM
+  vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.vft_temp_test
+WHERE
+  account IN ('Connection_BRSN',
+    'Borusan Telekom_BRSN',
+    'Borusan_INT_KN');
+ 
+----Turkey Temp to Monthly
+--DELETE
+--FROM
+--  vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.month_voice_traffic_turkey_test AS main
+--WHERE
+--  CONCAT(main.OpCo,CAST(Month AS string)) IN (
+--  SELECT
+--    DISTINCT CONCAT(OpCo,CAST(Month AS string))
+--  FROM
+--    vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.vft_temp_test);
+INSERT INTO
+  vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.month_voice_traffic_turkey_test (OpCo,
+    Month,
+    Direction,
+    Carrier_Destination,
+    VCS_Destination,
+    Carrier_Account,
+    VCS_Account,
+    Minutes,
+    Amount_EUR,
+    Amount_USD,
+    Rate_EUR,
+    Rate_USD,
+    OpCo_Currency,
+    Fixed_Mobile,
+    Country,
+    Region,
+    Account_Manager,
+    Manager,
+    Account_ID,service_processed_at,partition_year_month_day)
+SELECT
+  vt.Opco,
+  vt.Month,
+  vt.Direction,
+  vt.Destination AS Carrier_Destination,
+  cdest.VCS_DESC AS VCS_Destination,
+  vt.Account AS Carrier_Account,
+  IFNULL(cname1.vcs_carrier_name,cname2.vcs_carrier_name) AS VCS_Account,
+  vt.Minutes,
+  ROUND(vt.Amount/fx.VCS_EUR_RATE,6) AS Amount_EUR,
+  ROUND(vt.Amount/fx.VCS_USD_RATE,6) AS Amount_USD,
+  ROUND(vt.Rate/fx.VCS_EUR_RATE,6) AS Rate_EUR,
+  ROUND(vt.Rate/fx.VCS_USD_RATE,6) AS Rate_USD,
+  "EUR" AS OpCo_Currency,
+  CASE
+    WHEN VCS_DESC LIKE '%Mobile%' THEN 'Mobile'
+  ELSE
+  'Fixed'
+END
+  AS Fixed_Mobile,
+  vde.country AS Country,
+  vcrm.Region AS Region,
+  IFNULL(vam1.Account_Manager, vam2.Account_Manager) AS Account_Manager,
+  IFNULL(vam1.Manager, vam2.Manager) AS Manager,
+  IFNULL(cname1.vcs_account_id, cname2.vcs_account_id) AS Account_ID,vt.service_processed_at,vt.partition_year_month_day
+FROM
+  vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.vft_temp_test AS vt
+LEFT JOIN
+  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_customer_destination_map AS cdest
+ON
+  (vt.OpCo = cdest.OPCO_ID)
+  AND (vt.Destination = cdest.DEST_DESC)
+LEFT JOIN
+  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_carrier_name_mapping AS cname1
+ON
+  (vt.Account = cname1.carrier_carrier_name)
+  AND (cname1.opco_id = 'TURKEY')
+LEFT JOIN
+  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_carrier_name_mapping AS cname2
+ON
+  (vt.Account = cname2.carrier_carrier_name)
+  AND (cname2.opco_id = 'ALL')
+LEFT JOIN
+  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_forex_rate AS fx
+ON
+  (vt.Month = cast(fx.vcs_month as date format'dd-mon-yy'))
+  AND (fx.VCS_CURRENCY_ID = vt.Currency)
+LEFT JOIN
+  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_destination_map AS vde
+ON
+  (cdest.VCS_DESC = vde.vcs_destination)
+LEFT JOIN
+  vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.voice_country_region_map AS vcrm
+ON
+  (vde.country = vcrm.country)
+LEFT JOIN (
+  SELECT
+    DISTINCT VCS_Account_ID,
+    Account_Manager,
+    Manager
+  FROM
+    vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_accounts_managers_targets
+  WHERE
+    VCS_Product_Channel IN ('Voice',
+      'Cloud')) AS vam1
+ON
+  (cname1.vcs_account_id = vam1.VCS_Account_ID)
+LEFT JOIN (
+  SELECT
+    DISTINCT VCS_Account_ID,
+    Account_Manager,
+    Manager
+  FROM
+    vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_accounts_managers_targets
+  WHERE
+    VCS_Product_Channel IN ('Voice',
+      'Cloud')) AS vam2
+ON
+  (cname2.vcs_account_id = vam2.VCS_Account_ID)
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+create or replace table vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.tes_report_view as (select om.opco_description,tr.opco as opco_id,tr.month,tr.direction,tr.carrier_destination,tr.vcs_destination,tr.carrier_account,tr.vcs_account as carrier_name_vcs,tr.minutes,tr.revenue_minutes,case when tr.opco_currency = 'EUR' then tr.rate_eur else tr.rate_usd end as call_rate,tr.opco_currency,tr.amount_eur,--tr.opco_revenue_gbp) as amount_gbp,
+tr.amount_usd,oi.interco as intercompany, --tr.traffic_type1,tr.traffic_type2,tr.traffic_type3,
+tr.obr as origin_surcharge,ifnull(sc.surcharged,'n')as surcharged,--to_number(tr.misc2) as calls,
+tm.high_level_dest,tm.country,tm.eu_area_flag,tm.sub_region,tm.region,tm.parent_network,tm.fixed_mobile,(tr.revenue_minutes/f.plan_gbp) as plan_gbp_amount,(tr.revenue_minutes/f.plan_eur) as plan_eur_amount,tr.route_class,tr.customer,tr.supplier,tr.asr,tr.aloc,--tr.misc9 as ir_tarrif_type,tr.misc10 as ir_contract,to_number(tr.misc11) as ir_mgn_rev_cost,tr.misc12 as ir_report_type,
+tr.revenue_eur,tr.cost_eur,coalesce(tr.customer_contract,tr.supplier_contract) as contract_id,--tr.misc18 as ir_contract_id_no,
+cnm.entity,cnm.vcs_account,cnm.account_manager,cnm.sales_region,cnm.region_head,(case when bcm.bearcap = 'Public_IP' then bcm.bearcap else 'IPX' end)as bearcap,case when tr.customer like 'Vod%' and tr.supplier like 'Vod%' then concat(oi.interco,'Retail Out') when tr.customer like 'Vod%' and tr.supplier not like 'Vod%' then 'Retail Out' when tr.customer not like 'Vod%' and tr.supplier like 'Vod%' then concat(oi.interco,'Transit Out') else 'Transit Out' end as traffic_type1,case when tr.customer like 'Vod%' then 'Retail Out' else 'Transit Out' end as traffic_type2
+ 
+  from vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.month_voice_traffic_turkey_test tr
+left outer join vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_traffic_map tm
+on tr.vcs_destination = tm.vcs_destination
+left outer join vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_opco_mst om
+on tr.opco = om.opco_destination
+left join vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.opco_interco_list oi
+on tr.supplier = oi.vodafone and tr.opco = oi.opco
+--left outer join vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_intercompany ti
+--on tr.traffic_type1 = ti.traffic_type1
+left outer join vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_forex_rate f
+on (tr.opco_currency = f.vcs_currency_id and tr.month = parse_date('%d-%b-%y',f.vcs_month))
+left outer join vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_carrier_mapping_view cnm
+on (tr.carrier_account = cnm.vcs_carrier_name)
+ 
+left outer join vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_asc_aggregation sc
+on (tr.vcs_destination = sc.vcs_destination_desc and tr.obr = sc.origin_surcharge)
+ 
+left outer join vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s.vcs_bearcap_mapping bcm
+on (tr.month >= parse_date('%d-%b-%y',bcm.month) and tr.carrier_account = bcm.carrier and tr.opco = bcm.opco_id)
+ 
+where tr.month > '2022-03-01')
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+select sum(MINUTES) from (SELECT tr.OPCO_DESCRIPTION, tr.Month,tr.carrier_account ,tr.CARRIER_NAME_VCS, tr.VCS_DESTINATION, tr.COUNTRY, tr.HIGH_LEVEL_DEST, tr.ORIGIN_SURCHARGE, tr.MINUTES, tr.OPCO_CURRENCY, --tr.OPCO_AMOUNT,
+ tr.CALL_RATE, tr.AMOUNT_EUR, tr.INTERCOMPANY, tr.TRAFFIC_TYPE1, tr.TRAFFIC_TYPE2,tr.opco_id--, tr.TRAFFIC_TYPE3
+from vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.tes_report_view as tr
+WHERE tr.Month='2025-03-01' AND tr.OPCO_ID="TURKEY" AND tr.DIRECTION = "Out"
+and carrier_account <> 'VGEL_Wholesale') and carrier_destination not like '%ITFS%');
+ 
+ 
+select sum(SumOfMINUTES) from (SELECT tr.OPCO_ID, tr.Month, tr.DIRECTION,carrier_account ,tr.CARRIER_NAME_VCS, tr.VCS_DESTINATION, tr.CARRIER_DESTINATION, Sum(tr.MINUTES) AS SumOfMINUTES, Sum(tr.AMOUNT_EUR) AS SumOfAMOUNT_EUR, tr.TRAFFIC_TYPE2
+FROM vf-vrs-datahub.vfvrs_dh_lake_voice_processed_s.tes_report_view as tr
+GROUP BY tr.OPCO_ID, tr.Month, tr.DIRECTION, tr.CARRIER_NAME_VCS, tr.VCS_DESTINATION, tr.CARRIER_DESTINATION, tr.TRAFFIC_TYPE2,carrier_account
+HAVING (((tr.OPCO_ID)="TURKEY") AND ((tr.Month)='2025-03-01') and carrier_account not in ('VGEL_Cloud_Numbers','VGEL_Wholesale') ));
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+BEGIN
+
+DECLARE i,j int64 DEFAULT 0;
+
+DECLARE cnt,file_count int64;
+
+
+
+declare list array<string>;
+
+DECLARE
+
+  col ARRAY<STRUCT<table_name string,column_name string>>;
+
+
+
+set list = ['vf-vrs-datahub.vfvrs_dh_lake_bi_abacus_rawprepared_s','vf-vrs-datahub.vfvrs_dh_lake_bi_wft_rawprepared_s','vf-vrs-datahub.vfvrs_dh_lake_bi_netcool_rawprepared_s','vf-vrs-datahub.vfvrs_dh_lake_bi_clearview_rawprepared_s'];
+
+SET cnt=4;  
+
+WHILE i<cnt
+
+DO
+
+EXECUTE IMMEDIATE FORMAT("""  WITH cte AS ( Select distinct table_name , column_name from %s.INFORMATION_SCHEMA.COLUMNS where is_partitioning_column = 'YES' and table_name not in ('syn_project1_inbounduniqueroamers_daily_servingcountrycalltypeapntac','syn_project1_inbounduniqueroamers_monthly_servingcountrycalltypeapntac','syn_project1_outbounduniqueroamers_daily_calltypeapntac','syn_project1_outbounduniqueroamers_monthly_calltypeapntac','abs_deal_calc_raw_data','abs_actual_traffic_data','abs_forecast_traffic','wft_email_templates','wft_error_log','wft_footprint_rows_view','wft_forecast_daily_traffic','wft_gg_rows_view','wft_gt_rows_view','wft_import_business_setting_rows','wft_import_cos_traffic','wft_import_daily_traffic','wft_import_files_types','wft_import_performance_moc_rows','wft_import_performance_top40_rows','wft_import_performance_total_rows','wft_import_sfdc_footprint_rows','wft_import_st_guidance_master_rows','wft_import_st_performance','wft_import_st_performance_raw','wft_import_test_results','wft_import_traffic_st_guide_rows','wft_incident_status','wft_input_cos_traffic','wft_input_daily_traffic','wft_input_footprint','wft_input_performance_moc_rows','wft_input_performance_top40_rows','wft_input_performance_total_rows','wft_input_st_guidance_general','wft_input_st_guidance_targets','wft_input_st_performance','wft_input_st_performance_raw','wft_input_test_results','wft_input_traffic_st_guide_rows','wft_input_types','wft_network_ids','wft_operators_inbound','wft_output_daily_comment','wft_output_emails','wft_output_inc_emails','wft_output_lm_feedback','wft_output_steering_manual_import','wft_output_svc_incidents','wft_perf_moc_rows_view','wft_perf_top40_rows_view','wft_perf_total_rows_view','wft_permissions','wft_roles','wft_sa_operator_data','wft_steering_group','wft_steering_group_per_tadig','wft_steering_request','wft_tadig_to_cos_mapping','wft_users','wft_valid_for_date_shift','wft_validation_msgs','wft_vf_filter_cos','wft_workorder') and Not ENDS_WITH(table_name,'20221116') and Not ENDS_WITH(table_name,'historical') and instr(table_name,'test') = 0 and instr(table_name,'backup') = 0 and instr(table_name,'bkp') = 0 and instr(table_name,'copy7-11') = 0 order by 1) SELECT ARRAY_AGG(STRUCT(table_name,column_name)) AS col FROM cte""",list[i]) into col;
+
+EXECUTE IMMEDIATE FORMAT("""select count(distinct table_name) from %s.INFORMATION_SCHEMA.COLUMNS  where is_partitioning_column = 'YES' and table_name not in ('syn_project1_inbounduniqueroamers_daily_servingcountrycalltypeapntac','syn_project1_inbounduniqueroamers_monthly_servingcountrycalltypeapntac','syn_project1_outbounduniqueroamers_daily_calltypeapntac','syn_project1_outbounduniqueroamers_monthly_calltypeapntac','abs_deal_calc_raw_data','abs_actual_traffic_data','abs_forecast_traffic','wft_email_templates','wft_error_log','wft_footprint_rows_view','wft_forecast_daily_traffic','wft_gg_rows_view','wft_gt_rows_view','wft_import_business_setting_rows','wft_import_cos_traffic','wft_import_daily_traffic','wft_import_files_types','wft_import_performance_moc_rows','wft_import_performance_top40_rows','wft_import_performance_total_rows','wft_import_sfdc_footprint_rows','wft_import_st_guidance_master_rows','wft_import_st_performance','wft_import_st_performance_raw','wft_import_test_results','wft_import_traffic_st_guide_rows','wft_incident_status','wft_input_cos_traffic','wft_input_daily_traffic','wft_input_footprint','wft_input_performance_moc_rows','wft_input_performance_top40_rows','wft_input_performance_total_rows','wft_input_st_guidance_general','wft_input_st_guidance_targets','wft_input_st_performance','wft_input_st_performance_raw','wft_input_test_results','wft_input_traffic_st_guide_rows','wft_input_types','wft_network_ids','wft_operators_inbound','wft_output_daily_comment','wft_output_emails','wft_output_inc_emails','wft_output_lm_feedback','wft_output_steering_manual_import','wft_output_svc_incidents','wft_perf_moc_rows_view','wft_perf_top40_rows_view','wft_perf_total_rows_view','wft_permissions','wft_roles','wft_sa_operator_data','wft_steering_group','wft_steering_group_per_tadig','wft_steering_request','wft_tadig_to_cos_mapping','wft_users','wft_valid_for_date_shift','wft_validation_msgs','wft_vf_filter_cos','wft_workorder') and Not ENDS_WITH(table_name,'20221116') and Not ENDS_WITH(table_name,'historical') and instr(table_name,'test') = 0 and instr(table_name,'backup') = 0 and instr(table_name,'bkp') = 0 and instr(table_name,'copy7-11') = 0""",list[i]) into file_count;
+
+set j = 0 ;
+WHILE j<file_count
+
+DO
+
+
+
+
+EXECUTE IMMEDIATE FORMAT ("""
+insert into vf-grp-vrs-dev-poc.test_dq_poc.consistency_check
+With temptable as (select %s as pt1 ,count(1) as cnt
+
+from %s.%s
+
+where cast(%s as Date) > current_date()-7
+
+group by pt1
+
+order by  pt1 desc)
+
+,
+
+
+
+
+base as (
+
+select count(1) as records,temptable.pt1,temptable.cnt
+
+from %s.%s,temptable
+
+where cast(%s as Date) > current_date()-7
+
+group by %s,cnt,pt1
+
+)
+,
+
+result_table as (select '%s' as table_name, round(avg(records)) as average, pt1 as partition_date , cnt as count_of_record,
+
+
+case when cnt > avg(records)*85/100 and cnt < avg(records)*115/100 then 'consistent'
+
+     else 'not-consistent'
+
+     end as result
+
+from base
+
+where cast(pt1 as Date) = current_date()-1
+
+group by pt1 ,cnt
+
+order by pt1 desc)
+select table_name,average,partition_date,count_of_record,result,current_timestamp() as processing_date from result_table where result = 'not-consistent'""",col[SAFE_OFFSET(j)].column_name,list[i],col[SAFE_OFFSET(j)].table_name,col[SAFE_OFFSET(j)].column_name,list[i],col[SAFE_OFFSET(j)].table_name,col[SAFE_OFFSET(j)].column_name,col[SAFE_OFFSET(j)].column_name,col[SAFE_OFFSET(j)].table_name);
+
+
+
+
+SET j=j+1;
+
+END WHILE;
+
+SET i=i+1;
+
+END WHILE;
+
+END
+
+
+
+
+
+
+
+begin
+
+EXECUTE IMMEDIATE FORMAT ("""
+insert into vf-grp-vrs-dev-poc.test_dq_poc.consistency_check
+with main_table as (select partition_year_month_day , process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_inbound_detailedreport where Date(partition_year_month_day) >= current_date()-5 group by partition_year_month_day , process_date),
+backup_two_table as (select process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_inbound_detailedreport_backup_two where Date(partition_year_month_day) >= current_date()-5 group by 1), backup_three_table as (select process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_inbound_detailedreport_backup_three where Date(partition_year_month_day) >= current_date()-5 group by 1),
+result as (select mt.partition_year_month_day,mt.process_date, mt.cnt as main_table_count, (btable_two.cnt - btable_three.cnt ) as reference_value ,(btable_two.cnt-mt.cnt) as diff_backup_two, (btable_three.cnt-mt.cnt) as diff_backup_three, btable_two.cnt as backup_two_count,btable_three.cnt as backup_three_count,
+(case when (btable_two.cnt-mt.cnt) > 0 then 'backup_two greater than main_table' else 'equal' end) as result_backup2,
+(case when (btable_three.cnt-mt.cnt) > 0 then 'backup_three greater than main_table'
+else 'equal'
+end) as result_backup3
+from main_table as mt
+left join backup_two_table as btable_two
+on mt.process_date=btable_two.process_date
+left join backup_three_table as btable_three
+on mt.process_date=btable_three.process_date order by mt.process_date desc)
+select 'Inbound_detaiiled_report' as table_name , result.main_table_count as average ,partition_year_month_day ,
+(case when diff_backup_two > 0 and reference_value >= 0 then backup_two_count else backup_three_count end )as count ,
+(case when diff_backup_two > 0 and reference_value >= 0 then result_backup2 else result_backup3 end )as result,current_timestamp() as processing_date
+from result where result.result_backup2 != 'equal' and result.result_backup3 != 'equal'""");
+
+EXECUTE IMMEDIATE FORMAT("""
+insert into vf-grp-vrs-dev-poc.test_dq_poc.consistency_check
+with main_table as (select partition_year_month_day , process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_outbounddetailedreport where Date(partition_year_month_day) >= current_date()-5 group by partition_year_month_day , process_date)
+, backup_two_table as (select process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_outbounddetailedreport_backup_two where Date(partition_year_month_day) >= current_date()-5 group by 1), backup_three_table as (select process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_outbounddetailedreport_backup_three where Date(partition_year_month_day) >= current_date()-5 group by 1),
+result as (select mt.partition_year_month_day,mt.process_date, mt.cnt as main_table_count, (btable_two.cnt - btable_three.cnt ) as reference_value ,(btable_two.cnt-mt.cnt) as diff_backup_two, (btable_three.cnt-mt.cnt) as diff_backup_three, btable_two.cnt as backup_two_count,
+btable_three.cnt as backup_three_count,
+(case when (btable_two.cnt-mt.cnt) > 0 then 'backup_two greater than main_table' else 'equal' end) as result_backup2,
+(case when (btable_three.cnt-mt.cnt) > 0 then 'backup_three greater than main_table'
+else 'equal'
+end) as result_backup3
+from main_table as mt
+left join backup_two_table as btable_two
+on mt.process_date=btable_two.process_date
+left join backup_three_table as btable_three
+on mt.process_date=btable_three.process_date order by mt.process_date desc)
+select 'Inbound_detaiiled_report' as table_name , result.main_table_count as average ,partition_year_month_day ,
+(case when diff_backup_two > 0 and reference_value >= 0 then backup_two_count else backup_three_count end )as count ,
+(case when diff_backup_two > 0 and reference_value >= 0 then result_backup2 else result_backup3 end )as result,current_timestamp() as processing_date
+from result where result.result_backup2 != 'equal' and result.result_backup3 != 'equal'""");
+
+end
+
+
+
+
+
+
+
+
+begin
+
+EXECUTE IMMEDIATE FORMAT ("""
+insert into vf-grp-vrs-dev-poc.test_dq_poc.consistency_check
+with main_table as (select partition_year_month_day , process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_inbound_detailedreport where Date(partition_year_month_day) >= current_date()-5 group by partition_year_month_day , process_date),
+backup_two_table as (select process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_inbound_detailedreport_backup_two where Date(partition_year_month_day) >= current_date()-5 group by 1), backup_three_table as (select process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_inbound_detailedreport_backup_three where Date(partition_year_month_day) >= current_date()-5 group by 1),
+result as (select mt.partition_year_month_day,mt.process_date, mt.cnt as main_table_count, (btable_two.cnt - btable_three.cnt ) as reference_value ,(btable_two.cnt-mt.cnt) as diff_backup_two, (btable_three.cnt-mt.cnt) as diff_backup_three, btable_two.cnt as backup_two_count,btable_three.cnt as backup_three_count,
+(case when (btable_two.cnt-mt.cnt) > 0 then 'backup_two greater than main_table' else 'equal' end) as result_backup2,
+(case when (btable_three.cnt-mt.cnt) > 0 then 'backup_three greater than main_table'
+else 'equal'
+end) as result_backup3
+from main_table as mt
+left join backup_two_table as btable_two
+on mt.process_date=btable_two.process_date
+left join backup_three_table as btable_three
+on mt.process_date=btable_three.process_date order by mt.process_date desc)
+select 'Inbound_detaiiled_report' as table_name , result.main_table_count as average ,partition_year_month_day ,
+(case when diff_backup_two > 0 and reference_value >= 0 then backup_two_count else backup_three_count end )as count ,
+(case when diff_backup_two > 0 and reference_value >= 0 then result_backup2 else result_backup3 end )as result,current_timestamp() as processing_date
+from result where result.result_backup2 != 'equal' and result.result_backup3 != 'equal'""");
+
+EXECUTE IMMEDIATE FORMAT("""
+insert into vf-grp-vrs-dev-poc.test_dq_poc.consistency_check
+with main_table as (select partition_year_month_day , process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_outbounddetailedreport where Date(partition_year_month_day) >= current_date()-5 group by partition_year_month_day , process_date)
+, backup_two_table as (select process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_outbounddetailedreport_backup_two where Date(partition_year_month_day) >= current_date()-5 group by 1), backup_three_table as (select process_date, count(*) as cnt from vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s.syn_project1_outbounddetailedreport_backup_three where Date(partition_year_month_day) >= current_date()-5 group by 1),
+result as (select mt.partition_year_month_day,mt.process_date, mt.cnt as main_table_count, (btable_two.cnt - btable_three.cnt ) as reference_value ,(btable_two.cnt-mt.cnt) as diff_backup_two, (btable_three.cnt-mt.cnt) as diff_backup_three, btable_two.cnt as backup_two_count,
+btable_three.cnt as backup_three_count,
+(case when (btable_two.cnt-mt.cnt) > 0 then 'backup_two greater than main_table' else 'equal' end) as result_backup2,
+(case when (btable_three.cnt-mt.cnt) > 0 then 'backup_three greater than main_table'
+else 'equal'
+end) as result_backup3
+from main_table as mt
+left join backup_two_table as btable_two
+on mt.process_date=btable_two.process_date
+left join backup_three_table as btable_three
+on mt.process_date=btable_three.process_date order by mt.process_date desc)
+select 'Outbound_detaiiled_report' as table_name , result.main_table_count as average ,partition_year_month_day ,
+(case when diff_backup_two > 0 and reference_value >= 0 then backup_two_count else backup_three_count end )as count ,
+(case when diff_backup_two > 0 and reference_value >= 0 then result_backup2 else result_backup3 end )as result,current_timestamp() as processing_date
+from result where result.result_backup2 != 'equal' and result.result_backup3 != 'equal'""");
+
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+BEGIN
+
+DECLARE i,j int64 DEFAULT 0;
+
+DECLARE cnt,file_count int64;
+
+
+declare column_list string;
+declare tableid array<string>;
+
+DECLARE
+
+  col ARRAY<STRUCT<table_name string,column_name string>>;
+
+
+
+--set tableid = ['vf-vrs-datahub.vfvrs_dh_lake_bi_abacus_rawprepared_s','vf-vrs-datahub.vfvrs_dh_lake_bi_abacus_processed_s'];
+
+SET cnt=2;  
+
+WHILE i<cnt
+
+DO
+
+EXECUTE IMMEDIATE FORMAT("""  WITH cte AS ( Select distinct table_name , column_name from %s.INFORMATION_SCHEMA.COLUMNS where  table_name in ('abs_iot') and Not ENDS_WITH(table_name,'historical') and instr(table_name,'test') = 0 and instr(table_name,'backup') = 0 and instr(table_name,'bkp') = 0 and instr(table_name,'copy7-11') = 0 order by 1) SELECT ARRAY_AGG(STRUCT(table_name,column_name)) AS col FROM cte""",dataset_list[offset(i)]) into col;
+
+EXECUTE IMMEDIATE FORMAT("""select count(distinct table_name) from %s.INFORMATION_SCHEMA.COLUMNS  where is_partitioning_column = 'YES' and table_name in ('abs_iot') and Not ENDS_WITH(table_name,'historical') and instr(table_name,'test') = 0 and instr(table_name,'backup') = 0 and instr(table_name,'bkp') = 0 and instr(table_name,'copy7-11') = 0 order by 1""",dataset_list[offset(i)]) into file_count;
+
+set j = 0 ;
+WHILE j<file_count
+
+DO
+
+EXECUTE IMMEDIATE FORMAT("""Select string_agg(column_name,',') from %s.INFORMATION_SCHEMA.COLUMNS where table_name='%s' and '%s' not in ('partition_year_month_day','service_file_id','service_processed_at') """,dataset_list[offset(i)],col[SAFE_OFFSET(j)].table_name,col[SAFE_OFFSET(j)].column_name) into column_list;
+
+EXECUTE IMMEDIATE FORMAT("""insert into vf-vrs-datahub.vfvrs_dh_lake_bi_abacus_rawprepared_s.abs_dup_test (Select '%s' as table_name,cast(call_year_month as string) as date_column,count(1) rec_cnt,current_timestamp() as process_time from (Select %s from %s.%s where cast(partition_year_month_day as date) >= DATE_ADD(CURRENT_DATE(), INTERVAL -5 DAY) group by %s having count(1)>1) group by call_year_month)""",dataset_list[offset(i)],column_list,dataset_list[offset(i)],col[SAFE_OFFSET(j)].table_name,column_list);
+
+
+
+
+SET j=j+1;
+
+END WHILE;
+
+SET i=i+1;
+
+END WHILE;
+
+END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+BEGIN
+
+DECLARE i,j int64 DEFAULT 0;
+
+DECLARE cnt,file_count int64;
+Declare start_dt,end_dt date;
+
+
+declare list array<string>;
+
+DECLARE
+
+  col ARRAY<STRUCT<table_name string,column_name string>>;
+
+set start_dt=current_date()-6; set end_dt=current_date()-1;
+
+set list = ['vf-vrs-datahub.vfvrs_dh_lake_bi_syniverse_rawprepared_s','vf-vrs-datahub.vfvrs_dh_lake_bi_vee_rawprepared_s','vf-vrs-datahub.vfvrs_dh_lake_bi_salesforce_rawprepared_s'];
+
+SET cnt=3;  
+
+WHILE i<cnt
+
+DO
+
+EXECUTE IMMEDIATE FORMAT("""  WITH cte AS ( Select distinct table_name , column_name from `%s.INFORMATION_SCHEMA.COLUMNS`  where is_partitioning_column = 'YES' and table_name not in ('syn_project1_inbounduniqueroamers_daily_servingcountrycalltypeapntac','syn_project1_inbounduniqueroamers_monthly_servingcountrycalltypeapntac','syn_project1_outbounduniqueroamers_daily_calltypeapntac','syn_project1_outbounduniqueroamers_monthly_calltypeapntac','abs_deal_calc_raw_data','abs_actual_traffic_data','abs_forecast_traffic','wft_email_templates','wft_error_log','wft_footprint_rows_view','wft_forecast_daily_traffic','wft_gg_rows_view','wft_gt_rows_view','wft_import_business_setting_rows','wft_import_cos_traffic','wft_import_daily_traffic','wft_import_files_types','wft_import_performance_moc_rows','wft_import_performance_top40_rows','wft_import_performance_total_rows','wft_import_sfdc_footprint_rows','wft_import_st_guidance_master_rows','wft_import_st_performance','wft_import_st_performance_raw','wft_import_test_results','wft_import_traffic_st_guide_rows','wft_incident_status','wft_input_cos_traffic','wft_input_daily_traffic','wft_input_footprint','wft_input_performance_moc_rows','wft_input_performance_top40_rows','wft_input_performance_total_rows','wft_input_st_guidance_general','wft_input_st_guidance_targets','wft_input_st_performance','wft_input_st_performance_raw','wft_input_test_results','wft_input_traffic_st_guide_rows','wft_input_types','wft_network_ids','wft_operators_inbound','wft_output_daily_comment','wft_output_emails','wft_output_inc_emails','wft_output_lm_feedback','wft_output_steering_manual_import','wft_output_svc_incidents','wft_perf_moc_rows_view','wft_perf_top40_rows_view','wft_perf_total_rows_view','wft_permissions','wft_roles','wft_sa_operator_data','wft_steering_group','wft_steering_group_per_tadig','wft_steering_request','wft_tadig_to_cos_mapping','wft_users','wft_valid_for_date_shift','wft_validation_msgs','wft_vf_filter_cos','wft_workorder','vee_nlvrs','vee_nlvrsts','vee_nl201071','vee_201097') and Not ENDS_WITH(table_name,'20221116') and Not ENDS_WITH(table_name,'historical') order by 1) SELECT ARRAY_AGG(STRUCT(table_name,column_name)) AS col FROM cte""",list[i]) into col;
+
+EXECUTE IMMEDIATE FORMAT("""select count(distinct table_name) from %s.INFORMATION_SCHEMA.COLUMNS  where is_partitioning_column = 'YES' and table_name not in ('syn_project1_inbounduniqueroamers_daily_servingcountrycalltypeapntac','syn_project1_inbounduniqueroamers_monthly_servingcountrycalltypeapntac','syn_project1_outbounduniqueroamers_daily_calltypeapntac','syn_project1_outbounduniqueroamers_monthly_calltypeapntac','abs_deal_calc_raw_data','abs_actual_traffic_data','abs_forecast_traffic','wft_email_templates','wft_error_log','wft_footprint_rows_view','wft_forecast_daily_traffic','wft_gg_rows_view','wft_gt_rows_view','wft_import_business_setting_rows','wft_import_cos_traffic','wft_import_daily_traffic','wft_import_files_types','wft_import_performance_moc_rows','wft_import_performance_top40_rows','wft_import_performance_total_rows','wft_import_sfdc_footprint_rows','wft_import_st_guidance_master_rows','wft_import_st_performance','wft_import_st_performance_raw','wft_import_test_results','wft_import_traffic_st_guide_rows','wft_incident_status','wft_input_cos_traffic','wft_input_daily_traffic','wft_input_footprint','wft_input_performance_moc_rows','wft_input_performance_top40_rows','wft_input_performance_total_rows','wft_input_st_guidance_general','wft_input_st_guidance_targets','wft_input_st_performance','wft_input_st_performance_raw','wft_input_test_results','wft_input_traffic_st_guide_rows','wft_input_types','wft_network_ids','wft_operators_inbound','wft_output_daily_comment','wft_output_emails','wft_output_inc_emails','wft_output_lm_feedback','wft_output_steering_manual_import','wft_output_svc_incidents','wft_perf_moc_rows_view','wft_perf_top40_rows_view','wft_perf_total_rows_view','wft_permissions','wft_roles','wft_sa_operator_data','wft_steering_group','wft_steering_group_per_tadig','wft_steering_request','wft_tadig_to_cos_mapping','wft_users','wft_valid_for_date_shift','wft_validation_msgs','wft_vf_filter_cos','wft_workorder','vee_nlvrs','vee_nlvrsts','vee_nl201071','vee_201097') and Not ENDS_WITH(table_name,'20221116') and Not ENDS_WITH(table_name,'historical')""",list[i]) into file_count;
+
+WHILE j<file_count
+
+DO
+
+
+
+
+EXECUTE IMMEDIATE FORMAT(""" Insert into vf-grp-vrs-dev-poc.test_dq_poc.dq_syniverse_missing_partitions  SELECT distinct '%s.%s' as table_id,STRING_AGG(cast(missing_date as STRING), ' , '),current_timestamp() as ingested_time from unnest(generate_date_array('%t','%t',INTERVAL 1 day)) as missing_date where missing_date not in (Select distinct cast(partition_year_month_day as date) FROM %s.%s where partition_year_month_day between '%t' and '%t') group by table_id,ingested_time""",list[i],col[SAFE_OFFSET(j)].table_name,start_dt,end_dt,list[i],col[SAFE_OFFSET(j)].table_name,start_dt,end_dt);
+
+
+
+
+SET j=j+1;
+
+END WHILE;
+
+SET i=i+1;
+
+END WHILE;
+
+END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+BEGIN
+ 
+DECLARE i,j int64 DEFAULT 0;
+ 
+DECLARE cnt,file_count int64;
+Declare start_dt,end_dt,mth_dt date;
+ 
+ 
+declare list array<string>;
+ 
+DECLARE
+ 
+  col ARRAY<STRUCT<table_name string,column_name string>>;
+ 
+set start_dt=current_date()-45; set end_dt=current_date()-1; set mth_dt=current_date()-1;
+ 
+set list = ['vf-vrs-datahub.vfvrs_dh_lake_voice_rawprepared_s'];
+ 
+SET cnt=1;  
+ 
+WHILE i<cnt
+ 
+DO
+ 
+EXECUTE IMMEDIATE FORMAT("""  WITH cte AS ( Select distinct table_name , column_name from `%s.INFORMATION_SCHEMA.COLUMNS`  where is_partitioning_column = 'YES' and table_name in ('gcp_voice_data_current_month_exhgrg','gcp_voice_data_current_month_rg','gcp_voice_data_current_month_rg') and Not ENDS_WITH(table_name,'20221116') and Not ENDS_WITH(table_name,'historical') order by 1) SELECT ARRAY_AGG(STRUCT(table_name,column_name)) AS col FROM cte""",list[i]) into col;
+ 
+EXECUTE IMMEDIATE FORMAT("""select count(distinct table_name) from %s.INFORMATION_SCHEMA.COLUMNS  where is_partitioning_column = 'YES' and table_name in ('gcp_voice_data_current_month_exhgrg','gcp_voice_data_current_month_rg','gcp_voice_data_current_month_rg') and Not ENDS_WITH(table_name,'20221116') and Not ENDS_WITH(table_name,'historical')""",list[i]) into file_count;
+ 
+WHILE j<file_count
+ 
+DO
+ 
+EXECUTE IMMEDIATE FORMAT("""create or replace table vf-grp-vrs-dev-poc.test_dq_poc.dq_missing_partitions_45day as (SELECT distinct '%s.%s' as table_id,cast(missing_date as STRING) as missing_date,'missing' as flag,current_timestamp() as ingested_time from unnest(generate_date_array('%t','%t',INTERVAL 1 day)) as missing_date where missing_date not in (Select distinct cast(partition_year_month_day as date) FROM %s.%s where partition_year_month_day between '%t' and '%t') group by table_id,missing_date,ingested_time)""",list[i],col[SAFE_OFFSET(j)].table_name,start_dt,mth_dt,list[i],col[SAFE_OFFSET(j)].table_name,start_dt,mth_dt);
+ 
+ 
+EXECUTE IMMEDIATE FORMAT(""" Merge vf-grp-vrs-dev-poc.test_dq_poc.dq_missing_partitions_day as d7 using vf-grp-vrs-dev-poc.test_dq_poc.dq_missing_partitions_45day as md on trim(md.table_id)=trim(d7.table_id) and cast(md.missing_date as date)=cast(trim(d7.missing_date) as date) when matched then update set d7.ingested_time=md.ingested_time when not matched then insert (table_id,missing_date,flag,ingested_time) values(md.table_id,md.missing_date,md.flag,md.ingested_time)""");
+ 
+EXECUTE IMMEDIATE FORMAT("""update vf-grp-vrs-dev-poc.test_dq_poc.dq_missing_partitions_day set flag = 'loaded' , ingested_time=current_timestamp() where flag='missing' and concat(table_id,trim(missing_date)) not in (select concat(table_id,missing_date) from (select table_id,trim(missing_date) as missing_date,flag,ingested_time from vf-grp-vrs-dev-poc.test_dq_poc.dq_missing_partitions_45day where cast(ingested_time as date) = current_date()))""");
+ 
+ 
+ 
+ 
+SET j=j+1;
+ 
+END WHILE;
+ 
+SET i=i+1;
+ 
+END WHILE;
+ 
+END
